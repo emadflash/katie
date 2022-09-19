@@ -294,6 +294,7 @@ struct StringHeader {
 String string_reserve(usize cap);
 String make_string_empty();
 String make_string(char *str, usize len);
+String string_reset(String s);
 String append_string_length(String s, char *str, usize len);
 bool are_strings_equal(String lhs, String rhs);
 bool are_strings_equal_length(String lhs, char *rhs, usize rhs_length);

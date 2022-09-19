@@ -11,6 +11,8 @@
     TOKEN_KIND(Number, "Number")                                                                   \
     TOKEN_KIND(String, "String")                                                                   \
     TOKEN_KIND(Symbol, "Symbol")                                                                   \
+    TOKEN_KIND(Special_Define, "Special (def!)")                                                   \
+    TOKEN_KIND(Special_Let, "Special Let (let*)")                                                  \
     TOKEN_KIND(LeftParen, "Left Paren")                                                            \
     TOKEN_KIND(RightParen, "Right Paren")                                                          \
     TOKEN_KIND(LeftCurly, "Left Curly")                                                            \
@@ -78,12 +80,18 @@ Array(Token) katie_lexer_slurp_tokens(Katie_Lexer *l);
 typedef enum {
     KatieValKind_List,
     KatieValKind_Number,
+    KatieValKind_Special,
     KatieValKind_Symbol,
     KatieValKind_Proc,
     KatieValKind_Bool,
     KatieValKind_Vector,
     KatieValKind_HashMap,
 } KatieValKind;
+
+typedef enum {
+   Katie_Special_Define,
+   Katie_Special_Let,
+} Katie_SpecialKind;
 
 typedef struct KatieEnv KatieEnv;
 typedef struct Katie Katie;
@@ -94,6 +102,7 @@ typedef u8 Katie_Bool;
 typedef Array(KatieVal *) Katie_List;
 typedef String Katie_Symbol;
 typedef KatieVal *(*Katie_Proc)(Katie *env, int argc, KatieVal **argv);
+typedef KatieVal Katie_Module;
 
 struct KatieVal {
     KatieValKind kind;
@@ -102,8 +111,14 @@ struct KatieVal {
         Katie_Bool _bool;
         Katie_List list;
         Katie_Symbol symbol;
+        Katie_SpecialKind special;
         Katie_Proc proc;
     } as;
+};
+
+static char const *katie_special_kind_to_cstring[] = {
+    [Katie_Special_Define] = "def!",
+    [Katie_Special_Let] = "let*",
 };
 
 // --------------------------------------------------------------------------
@@ -120,6 +135,7 @@ struct Katie_Reader {
 void katie_init_reader(Katie_Reader *r, char *source_filepath, char *src);
 void katie_deinit_reader(Katie_Reader *r);
 KatieVal *katie_read_form(Katie_Reader *r);
+Katie_Module *katie_read_module(Katie_Reader *r);
 
 // --------------------------------------------------------------------------
 //                          - Env -
@@ -134,7 +150,7 @@ struct KatieEnv {
 //                          - Katie Context -
 // --------------------------------------------------------------------------
 struct Katie {
-    KatieEnv env;
+    KatieEnv *env;
 };
 
 void init_katie_ctx(Katie *k);

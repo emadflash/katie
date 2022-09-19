@@ -29,14 +29,14 @@ void cli_dump_tokens(char *source_filepath) {
 
 void cli_stringify_source(char *source_filepath) {
     Katie_Reader r;
-    KatieVal *val;
+    Katie_Module *module;
     String strResult;
 
     String source = file_as_string(source_filepath);
     katie_init_reader(&r, source_filepath, source);
 
-    val = katie_read_form(&r);
-    if (!val) {
+    module = katie_read_module(&r);
+    if (!module) {
         eprintln("error: failed to read: %s", source_filepath);
         katie_deinit_reader(&r);
         free_string(source);
@@ -44,10 +44,10 @@ void cli_stringify_source(char *source_filepath) {
     }
 
     strResult = make_string_empty();
-    strResult = katie_value_as_string(strResult, val);
+    strResult = katie_value_as_string(strResult, module);
     printf("%s", strResult);
 
-    dealloc_val(val);
+    dealloc_val(module);
     free_string(strResult);
     katie_deinit_reader(&r);
     free_string(source);

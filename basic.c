@@ -102,6 +102,11 @@ String make_string(char *str, usize len) {
     return s;
 }
 
+String string_reset(String s) {
+    string_length(s) = 0;
+    return s;
+}
+
 String append_string_length(String s, char *str, usize len) {
     usize cap;
     usize rem = string_capacity(s) - string_length(s);
