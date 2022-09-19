@@ -11,8 +11,12 @@
     TOKEN_KIND(Number, "Number")                                                                   \
     TOKEN_KIND(String, "String")                                                                   \
     TOKEN_KIND(Symbol, "Symbol")                                                                   \
-    TOKEN_KIND(Special_Define, "Special (def!)")                                                   \
-    TOKEN_KIND(Special_Let, "Special Let (let*)")                                                  \
+    TOKEN_KIND(Special_Def, "Special(def!)")                                                       \
+    TOKEN_KIND(Special_Let, "Special(let*)")                                                       \
+    TOKEN_KIND(Special_If, "Special(if)")                                                          \
+    TOKEN_KIND(Special_Do, "Special(do)")                                                          \
+    TOKEN_KIND(Special_Fn, "Special(fn)")                                                          \
+    TOKEN_KIND(Special_Defn, "Special(defn)")                                                      \
     TOKEN_KIND(LeftParen, "Left Paren")                                                            \
     TOKEN_KIND(RightParen, "Right Paren")                                                          \
     TOKEN_KIND(LeftCurly, "Left Curly")                                                            \
@@ -80,6 +84,7 @@ Array(Token) katie_lexer_slurp_tokens(Katie_Lexer *l);
 typedef enum {
     KatieValKind_List,
     KatieValKind_Number,
+    KatieValKind_Nil,
     KatieValKind_Special,
     KatieValKind_Symbol,
     KatieValKind_Proc,
@@ -89,8 +94,12 @@ typedef enum {
 } KatieValKind;
 
 typedef enum {
-   Katie_Special_Define,
+   Katie_Special_Def,
    Katie_Special_Let,
+   Katie_Special_If,
+   Katie_Special_Do,
+   Katie_Special_Fn,
+   Katie_Special_Defn,
 } Katie_SpecialKind;
 
 typedef struct KatieEnv KatieEnv;
@@ -101,7 +110,7 @@ typedef i64 Katie_Number;
 typedef u8 Katie_Bool;
 typedef Array(KatieVal *) Katie_List;
 typedef String Katie_Symbol;
-typedef KatieVal *(*Katie_Proc)(Katie *env, int argc, KatieVal **argv);
+typedef KatieVal *(*Katie_Proc)(Katie *ctx, int argc, KatieVal **argv);
 typedef KatieVal Katie_Module;
 
 struct KatieVal {
@@ -117,8 +126,12 @@ struct KatieVal {
 };
 
 static char const *katie_special_kind_to_cstring[] = {
-    [Katie_Special_Define] = "def!",
+    [Katie_Special_Def] = "def!",
     [Katie_Special_Let] = "let*",
+    [Katie_Special_If] = "if",
+    [Katie_Special_Do] = "do",
+    [Katie_Special_Fn] = "fn",
+    [Katie_Special_Defn] = "fn",
 };
 
 // --------------------------------------------------------------------------
@@ -157,6 +170,7 @@ void init_katie_ctx(Katie *k);
 void deinit_katie_ctx(Katie *k);
 
 KatieVal *alloc_val(KatieValKind kind);
+KatieVal *alloc_nil();
 KatieVal *alloc_number(i64 number);
 KatieVal *alloc_bool(bool _bool);
 KatieVal *alloc_list(Array(KatieVal *) list);
@@ -164,6 +178,7 @@ KatieVal *alloc_symbol(char *text, usize length);
 KatieVal *alloc_proc(Katie_Proc proc);
 void dealloc_val(KatieVal *val);
 
+KatieVal *katie_eval(Katie *ctx, KatieVal *val);
 String katie_value_as_string(String strResult, KatieVal *type);
 
 // --------------------------------------------------------------------------

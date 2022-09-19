@@ -1,6 +1,6 @@
 (def! x 3)
 (def! y 2)
 
-(*
-  x
-  (+ x y))
+(def! z (* x (+ x y)))
+
+(if false z 69)

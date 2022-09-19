@@ -236,9 +236,17 @@ static Token lexer_scan_symbol(Katie_Lexer *l) {
     usize token_length = l->index - l->token_start_index;
     if (token_length <= 4) {
         if (are_cstrings_equal_length(l->token_begin, "def!", token_length))
-            l->token_kind = TokenKind_Special_Define;
+            l->token_kind = TokenKind_Special_Def;
         if (are_cstrings_equal_length(l->token_begin, "let*", token_length))
             l->token_kind = TokenKind_Special_Let;
+        if (are_cstrings_equal_length(l->token_begin, "if", token_length))
+            l->token_kind = TokenKind_Special_If;
+        if (are_cstrings_equal_length(l->token_begin, "do", token_length))
+            l->token_kind = TokenKind_Special_Do;
+        if (are_cstrings_equal_length(l->token_begin, "fn", token_length))
+            l->token_kind = TokenKind_Special_Fn;
+        if (are_cstrings_equal_length(l->token_begin, "defn", token_length))
+            l->token_kind = TokenKind_Special_Defn;
     }
 
     return make_token(l->token_begin, token_length, l->token_kind, l->token_start_pos,
@@ -304,6 +312,10 @@ KatieVal *alloc_val(KatieValKind kind) {
     return val;
 }
 
+KatieVal *alloc_nil() {
+    return alloc_val(KatieValKind_Nil);
+}
+
 KatieVal *alloc_number(i64 number) {
     KatieVal *val = alloc_val(KatieValKind_Number);
     val->as.number = number;
@@ -360,6 +372,8 @@ void dealloc_val(KatieVal *val) {
 
 String katie_value_as_string(String strResult, KatieVal *val) {
     switch (val->kind) {
+    case KatieValKind_Nil: strResult = append_cstring(strResult, "nil"); break;
+
     case KatieValKind_Number: {
         char buf[256];
         sprintf(buf, "%ld", val->as.number);
@@ -392,7 +406,9 @@ String katie_value_as_string(String strResult, KatieVal *val) {
 
 void katie_print_value(KatieVal *val) {
     switch (val->kind) {
+    case KatieValKind_Nil: printf("nil"); break;
     case KatieValKind_Number: printf("%ld", val->as.number); break;
+    case KatieValKind_Bool: printf("%s", val->as._bool ? "true" : "false"); break;
     case KatieValKind_Symbol: printf("%s", val->as.symbol); break;
     case KatieValKind_Special: printf("%s", katie_special_kind_to_cstring[val->as.special]); break;
     case KatieValKind_List:
@@ -404,6 +420,7 @@ void katie_print_value(KatieVal *val) {
         printf(")");
         break;
 
+    case KatieValKind_Proc: break;
     default: Unreachable();
     }
 }
@@ -475,13 +492,18 @@ KatieVal *katie_read_form(Katie_Reader *r) {
         reader_next_token(r);
         break;
 
-    case TokenKind_Special_Define:
-        val = alloc_special(Katie_Special_Define);
+    case TokenKind_Special_Def:
+        val = alloc_special(Katie_Special_Def);
         reader_next_token(r);
         break;
 
     case TokenKind_Special_Let:
         val = alloc_special(Katie_Special_Let);
+        reader_next_token(r);
+        break;
+
+    case TokenKind_Special_If:
+        val = alloc_special(Katie_Special_If);
         reader_next_token(r);
         break;
 
@@ -632,6 +654,44 @@ static KatieVal *env_lookup(KatieEnv *env, String key) {
 // --------------------------------------------------------------------------
 static KatieVal *reduce_val(Katie *ctx, KatieVal *val);
 
+KatieVal *eval_special_form(Katie *ctx, KatieVal *sym, KatieVal *val) {
+    KatieEnv *oldEnv;
+    KatieVal *newVal;
+    Array(KatieVal *) list = val->as.list;
+
+    Debug_Assert(array_length(list) >= 3);
+    newVal = NULL;
+
+    switch (sym->as.special) {
+    case Katie_Special_Def:
+        Debug_Assert(list[1]->kind == KatieValKind_Symbol);
+        newVal = katie_eval(ctx, list[2]);
+        env_define(ctx->env, list[1]->as.symbol, newVal);
+        return newVal;
+
+    case Katie_Special_Let: Todo();
+    case Katie_Special_Defn: Todo();
+
+    case Katie_Special_If: {
+        KatieVal *cond = katie_eval(ctx, list[1]);
+        if (cond->kind != KatieValKind_Nil && (cond->kind == KatieValKind_Bool && cond->as._bool)) {
+            return katie_eval(ctx, list[2]);
+        } else {
+            if (array_length(list) < 3) return alloc_nil();
+            return katie_eval(ctx, list[3]);
+        }
+    } break;
+
+    case Katie_Special_Fn:
+        oldEnv = ctx->env;
+        ctx->env = alloc_env(oldEnv);
+        ctx->env = oldEnv;
+        return newVal;
+
+    default: Unreachable();
+    }
+}
+
 KatieVal *katie_eval(Katie *ctx, KatieVal *val) {
     KatieVal *newList, *first;
 
@@ -642,25 +702,7 @@ KatieVal *katie_eval(Katie *ctx, KatieVal *val) {
     first = val->as.list[0];
 
     if (first->kind == KatieValKind_Special) { /* special forms */
-        KatieVal *newVal;
-        Array(KatieVal *) list = val->as.list;
-
-        Debug_Assert(array_length(list) >= 3);
-
-        switch (first->as.special) {
-        case Katie_Special_Define:
-            Debug_Assert(list[1]->kind == KatieValKind_Symbol);
-            newVal = reduce_val(ctx, list[2]);
-            env_define(ctx->env, list[1]->as.symbol, newVal);
-            break;
-
-        case Katie_Special_Let:
-            Todo();
-
-        default: Unreachable();
-        }
-
-        return newVal;
+        return eval_special_form(ctx, first, val);
     } else {
         Debug_Assert(first->kind == KatieValKind_Symbol);
 
@@ -723,7 +765,6 @@ void katie_take_file_source(Katie *k, char *source_filepath, String source) {
     Katie_Reader r;
     KatieVal *valResult;
     Katie_Module *module;
-    String strResult;
 
     katie_init_reader(&r, source_filepath, source);
 
