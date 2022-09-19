@@ -1,10 +1,6 @@
 #include "basic.c"
 #include "cli.c"
-#include "tokens.c"
 #include "katie.c"
-#include "lexer.c"
-#include "reader.c"
-#include "eval.c"
 
 void repl() {
     bool is_quit = false;
@@ -20,29 +16,29 @@ void repl() {
 #ifdef Debug
 void cli_dump_tokens(char *source_filepath) {
     String source = file_as_string(source_filepath);
-    Lexer *l = make_lexer(source_filepath, source);
-    Array(Token) tokens = lexer_slurp_tokens(l);
+    Katie_Lexer l;
+    katie_init_lexer(&l, source_filepath, source);
+    Array(Token) tokens = katie_lexer_slurp_tokens(&l);
     array_for_each(tokens, i) {
         token_print(&tokens[i]);
         printf("\n");
     }
     free_string(source);
     free_array(tokens);
-    free_lexer(l);
 }
 
 void cli_stringify_source(char *source_filepath) {
-    Reader r;
+    Katie_Reader r;
     KatieVal *val;
     String strResult;
 
     String source = file_as_string(source_filepath);
-    init_reader(&r, source_filepath, source);
+    katie_init_reader(&r, source_filepath, source);
 
-    val = read_form(&r);
+    val = katie_read_form(&r);
     if (!val) {
         eprintln("error: failed to read: %s", source_filepath);
-        deinit_reader(&r);
+        katie_deinit_reader(&r);
         free_string(source);
         return;
     }
@@ -53,36 +49,10 @@ void cli_stringify_source(char *source_filepath) {
 
     dealloc_val(val);
     free_string(strResult);
-    deinit_reader(&r);
+    katie_deinit_reader(&r);
     free_string(source);
 }
 #endif
-
-
-void katie_run(Katie *k, char *source_filepath, String source) {
-    Reader r;
-    KatieVal *val, *valResult;
-    String strResult;
-
-    init_reader(&r, source_filepath, source);
-
-    val = read_form(&r);
-    if (!val) {
-        eprintln("error: failed to read: %s", source_filepath);
-        deinit_reader(&r);
-        free_string(source);
-        return;
-    }
-
-    valResult = eval(&k->env, val);
-    strResult = make_string_empty();
-    strResult = katie_value_as_string(strResult, valResult);
-    println("%s", strResult);
-
-    dealloc_val(val);
-    free_string(strResult);
-    deinit_reader(&r);
-}
 
 int main(int argc, char **argv) {
     char *source_filepath;
@@ -123,10 +93,10 @@ int main(int argc, char **argv) {
     Katie k;
     String source = file_as_string(source_filepath);
 
-    init_katie_w_natives(&k);
-    katie_run(&k, source_filepath, source);
+    init_katie_ctx(&k);
+    katie_take_file_source(&k, source_filepath, source);
 
-    deinit_katie(&k);
+    deinit_katie_ctx(&k);
     free_string(source);
 
     return 0;
