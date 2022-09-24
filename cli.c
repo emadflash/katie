@@ -251,8 +251,7 @@ static void cli_set_value_bool(Cli *cli, bool *value, char *flag_name, char *fla
             *value = false;
         } else {
             cli_report_error(cli,
-                             "error: expected bool( yes,true,no,false,y,n ) "
-                             "for '%s', got '%s'\n",
+                             "error: expected bool( yes,true,no,false,y,n ) for '%s', got '%s'\n",
                              flag_name, flag_value);
         }
     } else {

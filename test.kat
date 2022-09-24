@@ -1,6 +1,6 @@
-(def! x 3)
-(def! y 2)
+(def x 3)
+(def y 2)
 
-(def! z (* x (+ x y)))
+(def z (* x (+ x y)))
 
-(if false z 69)
+((fn (a) (+ a 1)) 10)
