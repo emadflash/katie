@@ -3,6 +3,9 @@
 
 #include "basic.h"
 
+#define STB_DS_IMPLEMENTATION
+#include "stb_ds.h"
+
 // --------------------------------------------------------------------------
 //                          - Tokens -
 // --------------------------------------------------------------------------
@@ -82,14 +85,14 @@ Array(Token) katie_lexer_slurp_tokens(Katie_Lexer *l);
 //                          - Value -
 // --------------------------------------------------------------------------
 typedef enum {
+  KatieValKind_Bool,
   KatieValKind_List,
   KatieValKind_Number,
   KatieValKind_Nil,
   KatieValKind_Special, /* Special symbol */
   KatieValKind_Symbol,  /* Normal symbol */
-  KatieValKind_Proc,
   KatieValKind_Function,
-  KatieValKind_Bool,
+  KatieValKind_NativeFunction,
   KatieValKind_Vector,
   KatieValKind_HashMap,
 } KatieValKind;
@@ -160,9 +163,14 @@ Katie_Module *katie_read_module(Katie_Reader *r);
 // --------------------------------------------------------------------------
 //                          - Env -
 // --------------------------------------------------------------------------
+typedef struct KatieEnv_Entry KatieEnv_Entry;
+struct KatieEnv_Entry {
+  char *key;
+  KatieVal *value;
+};
+
 struct KatieEnv {
-  Array(char *) keys;
-  Array(KatieVal *) values;
+  KatieEnv_Entry *entries; /* entries hashmap */
   KatieEnv *outer;
 };
 
@@ -182,7 +190,7 @@ KatieVal *alloc_number(i64 number);
 KatieVal *alloc_bool(bool _bool);
 KatieVal *alloc_list(Array(KatieVal *) list);
 KatieVal *alloc_symbol(char *text, usize length);
-KatieVal *alloc_proc(Katie_Proc proc);
+KatieVal *alloc_native_proc(Katie_Proc proc);
 KatieVal *alloc_function(KatieEnv *env, KatieVal *name, KatieVal *params,
                          KatieVal *body);
 void dealloc_val(KatieVal *val);

@@ -3,4 +3,6 @@
 
 (def z (* x (+ x y)))
 
-((fn (a) (+ a 1)) 10)
+(def plus-one (fn (a) (+ a 1)))
+
+(def xy (plus-one (plus-one x)))

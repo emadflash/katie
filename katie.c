@@ -346,8 +346,8 @@ KatieVal *alloc_special(Katie_SpecialKind special_kind) {
     return val;
 }
 
-KatieVal *alloc_proc(Katie_Proc proc) {
-    KatieVal *val = alloc_val(KatieValKind_Proc);
+KatieVal *alloc_native_proc(Katie_Proc proc) {
+    KatieVal *val = alloc_val(KatieValKind_NativeFunction);
     val->as.proc = proc;
     return val;
 }
@@ -435,7 +435,7 @@ void katie_print_value(KatieVal *val) {
         printf(")");
         break;
 
-    case KatieValKind_Proc: break;
+    case KatieValKind_NativeFunction: printf("#<native-function>"); break;
     case KatieValKind_Function: printf("#<function>"); break;
     default: Unreachable();
     }
@@ -638,33 +638,31 @@ static KatieVal *native_op_div(Katie *ctx, int argc, KatieVal **argv) {
 // --------------------------------------------------------------------------
 static KatieEnv *alloc_env(KatieEnv *outer) {
     KatieEnv *env = xmalloc(sizeof(KatieEnv));
-    init_array(env->keys);
-    init_array(env->values);
+    env->entries = NULL;
     env->outer = outer;
     return env;
 }
 
 static void dealloc_env(KatieEnv *env) {
-    free_array(env->keys);
-    free_array(env->values);
+    shfree(env->entries);
     if (env->outer) dealloc_env(env->outer);
     free(env);
 }
 
-static void env_define(KatieEnv *env, char *key, KatieVal *val) {
-    array_push(env->keys, key);
-    array_push(env->values, val);
+static KatieVal *env_find_1level(KatieEnv *env, String key) {
+    KatieVal *val = shget(env->entries, key);
+    return (val) ? val : NULL;
 }
 
 static KatieVal *env_lookup(KatieEnv *env, String key) {
-    array_for_each(env->keys, i) {
-        if (are_equal_cstring(key, env->keys[i])) {
-            return env->values[i];
-        }
-    }
-
+    KatieVal *val = shget(env->entries, key);
+    if (val) return val;
     if (env->outer) return env_lookup(env->outer, key);
     return NULL;
+}
+
+static void env_put(KatieEnv *env, char *key, KatieVal *val) {
+    shput(env->entries, key, val);
 }
 
 // --------------------------------------------------------------------------
@@ -683,7 +681,7 @@ KatieVal *eval_special_form(Katie *ctx, KatieVal *sym, KatieVal *val) {
         KatieVal *newVal;
         Debug_Assert(list[1]->kind == KatieValKind_Symbol);
         newVal = katie_eval(ctx, list[2]);
-        env_define(ctx->env, list[1]->as.symbol, newVal);
+        env_put(ctx->env, list[1]->as.symbol, newVal);
         return newVal;
     }
 
@@ -703,7 +701,16 @@ KatieVal *eval_special_form(Katie *ctx, KatieVal *sym, KatieVal *val) {
     case Katie_Special_Fn: { /* lambda */
         Debug_Assert(array_length(list) == 3);
         Debug_Assert(list[1]->kind == KatieValKind_List);
-        return alloc_function(alloc_env(ctx->env), NULL, list[1], list[2]);
+
+        KatieEnv *env = alloc_env(ctx->env);
+        Array(KatieVal *) params_list = list[1]->as.list;
+
+        /* Initialize function arguments as nil in lambda env */
+        array_for_each(params_list, i) {
+            Debug_Assert(params_list[i]->as.symbol);
+            env_put(env, params_list[i]->as.symbol, alloc_nil());
+        }
+        return alloc_function(env, NULL, list[1], list[2]);
     }
 
     default: Unreachable();
@@ -711,59 +718,69 @@ KatieVal *eval_special_form(Katie *ctx, KatieVal *sym, KatieVal *val) {
 }
 
 KatieVal *katie_eval(Katie *ctx, KatieVal *val) {
-    KatieVal *first;
+    KatieVal *first, *reducedList, *reducedListFirst;
 
     if (val->kind != KatieValKind_List) return reduce_val(ctx, val);
     if (array_is_empty(val->as.list)) return NULL;
 
-    /* handle builtin envirnoment modifiers */
+    /* handle special form */
     first = val->as.list[0];
-
-    if (first->kind == KatieValKind_Special) { /* special forms */
+    if (first->kind == KatieValKind_Special) {
         return eval_special_form(ctx, first, val);
-    } else {
-        KatieVal *reducedList, *reducedListFirst;
+    }
 
-        reducedList = reduce_val(ctx, val);
-        reducedListFirst = reducedList->as.list[0];
+    reducedList = reduce_val(ctx, val);
+    reducedListFirst = reducedList->as.list[0];
 
+    switch (reducedListFirst->kind) {
+    case KatieValKind_NativeFunction: {
         if (first->kind == KatieValKind_Symbol) {
-            if (!reducedList) return NULL;
-            if (array_is_empty(reducedList->as.list) || array_length(reducedList->as.list) < 2)
-                return NULL;
-
-            if (reducedListFirst->kind != KatieValKind_Proc) {
-                Unreachable();
-            }
+            if (array_length(reducedList->as.list) < 2) return NULL;
 
             return reducedListFirst->as.proc(ctx, array_length(reducedList->as.list) - 1,
                                              &reducedList->as.list[1]);
-        } else {
-            Debug_Assert(reducedListFirst->kind == KatieValKind_Function);
-            Debug_Assert(array_length(reducedList->as.list) >= 2);
-
-            Katie_Function fn;
-            KatieVal *valAfterFunctionApply;
-            Array(KatieVal *) params_list;
-
-            fn = reducedListFirst->as.function;
-            params_list = fn.params->as.list;
-            if (array_length(params_list) != array_length(reducedList->as.list) - 1) {
-                Unreachable(); /* params don't match */
-            }
-
-            array_for_each(params_list, i) {
-                Debug_Assert(params_list[i]->kind == KatieValKind_Symbol);
-                env_define(fn.env, params_list[i]->as.symbol, reducedList->as.list[i + 1]);
-            }
-
-            KatieEnv *envSave = ctx->env;
-            ctx->env = fn.env;
-            valAfterFunctionApply = katie_eval(ctx, fn.body);
-            ctx->env = envSave;
-
-            return valAfterFunctionApply;
         }
+    }
+
+    case KatieValKind_Function: {
+        Debug_Assert(array_length(reducedList->as.list) >= 2);
+
+        KatieVal *valAfterFunctionApply;
+        Katie_Function fn;
+        Array(KatieVal *) params_list;
+
+        fn = reducedListFirst->as.function;
+        params_list = fn.params->as.list;
+
+        /* Check params count */
+        if (array_length(params_list) != array_length(reducedList->as.list) - 1) {
+            Unreachable();
+        }
+
+        /* Assign value to params in local env */
+        KatieVal *arg;
+        array_for_each(params_list, i) {
+            Debug_Assert(params_list[i]->kind == KatieValKind_Symbol);
+            arg = env_find_1level(fn.env, params_list[i]->as.symbol);
+
+            /* Refresh argument value
+             * Initially the particular argument's value is set to nil using alloc_nil()
+             * After that one every new function call we free the old value and initialize it with the new value.
+             *
+             * TODO We need an allocator here
+             */
+            *arg = *reducedList->as.list[i + 1];
+        }
+
+        KatieEnv *envSave = ctx->env;
+        ctx->env = fn.env;
+        valAfterFunctionApply = katie_eval(ctx, fn.body);
+        ctx->env = envSave;
+
+        return valAfterFunctionApply;
+    }
+
+    default: Unreachable();
     }
 }
 
@@ -799,12 +816,12 @@ static KatieVal *reduce_val(Katie *ctx, KatieVal *val) {
 // --------------------------------------------------------------------------
 void init_katie_ctx(Katie *k) {
     k->env = alloc_env(NULL);
-    env_define(k->env, "+", alloc_proc(native_op_add));
-    env_define(k->env, "-", alloc_proc(native_op_sub));
-    env_define(k->env, "*", alloc_proc(native_op_mul));
-    env_define(k->env, "/", alloc_proc(native_op_div));
-    env_define(k->env, "true", alloc_bool(true));
-    env_define(k->env, "false", alloc_bool(false));
+    env_put(k->env, "+", alloc_native_proc(native_op_add));
+    env_put(k->env, "-", alloc_native_proc(native_op_sub));
+    env_put(k->env, "*", alloc_native_proc(native_op_mul));
+    env_put(k->env, "/", alloc_native_proc(native_op_div));
+    env_put(k->env, "true", alloc_bool(true));
+    env_put(k->env, "false", alloc_bool(false));
 }
 
 void deinit_katie_ctx(Katie *k) {
